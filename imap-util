@@ -9,6 +9,7 @@ import getopt
 import ConfigParser
 import os.path
 import time
+import logging
 
 myname = sys.argv[0]
 
@@ -33,8 +34,10 @@ verbose = 0
 for opt, val in opts:
     if opt in ('-v','--verbose'):
         verbose = 1
+        logging.basicConfig(level=logging.INFO)
     elif opt in ('-d','--debug'):
         verbose = 2
+        logging.basicConfig(level=logging.DEBUG)
 
 rc = '~/.imap'
 acct, action = args[0:2]
@@ -48,9 +51,8 @@ account = ptimap.Account(host=cp.get(acct,'host'),
                          user=cp.get(acct,'user'),
                          password=cp.get(acct,'password'),
                          ssl=cp.getboolean(acct,'ssl'),
-                         port=cp.getint(acct,'port'),
-                         directory=cp.get(acct,'directory'),
-                         verbose=verbose)
+                         port=cp.getint(acct,'port') or None,
+                         directory=cp.get(acct,'directory'))
 account.login()
 
 if action=='login':
