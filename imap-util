@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+#=======================================================================
+#	$Id$
+#	Various actions on IMAP folders
+#=======================================================================
+import sys
+import ptimap
+import getopt
+import ConfigParser
+import os.path
+import time
+
+myname = sys.argv[0]
+
+def die(msg,code=1):
+    sys.stderr.write(msg+'\n')
+    sys.exit(code)
+
+def usage():
+    die("Usage: %s account command..." % myname,
+        200)
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:],
+                               'dv',
+                               ['debug','verbose'])
+except getopt.GetoptError, err:
+    sys.stderr.write(err + '\n')
+    usage()
+if len(args) < 2:
+    usage()
+verbose = 0
+for opt, val in opts:
+    if opt in ('-v','--verbose'):
+        verbose = 1
+    elif opt in ('-d','--debug'):
+        verbose = 2
+
+rc = '~/.imap'
+acct, action = args[0:2]
+cp = ConfigParser.SafeConfigParser(dict(ssl='no',
+                                        port='0',
+                                        directory=''))
+cp.read(os.path.expanduser(rc))
+if not cp.has_section(acct):
+    die("%s: No such account '%s' in %s" % (myname,acct,rc))
+account = ptimap.Account(host=cp.get(acct,'host'),
+                         user=cp.get(acct,'user'),
+                         password=cp.get(acct,'password'),
+                         ssl=cp.getboolean(acct,'ssl'),
+                         port=cp.getint(acct,'port'),
+                         directory=cp.get(acct,'directory'),
+                         verbose=verbose)
+account.login()
+
+if action=='login':
+    pass
+elif action=='capabilities':
+    print account._imap.capabilities
+elif action=='namespace':
+    ns = account.namespace()
+    print ns
+elif action=='folders':
+    if len(sys.argv) > 3:
+        lst = account.folders(sys.argv[3])
+    else:
+        lst = account.folders()
+    for f in lst:
+        print f
+
+elif action=='select':
+    folder = sys.argv[3]
+    nmsgs = account.select(folder)
+    print "%d message(s) in %s" % (nmsgs, folder)
+
+elif action in ('older','delete-older'):
+    if len(sys.argv) < 5:
+        die("Usage: %s account older folder days" % myname)
+    folder, days = sys.argv[3:5]
+    account.select(folder)
+    date = time.localtime(time.time() - int(days) * 86400)
+#        sdate = imaplib.Time2Internaldate(date)
+#        print 'sdate:',sdate
+#        lst = account.search('SEEN','UNDELETED',
+#                             'BEFORE',sdate)
+    sdate = time.strftime('%e-%b-%Y', date)
+    lst = account.search('SEEN','UNDELETED',
+                             '(BEFORE %s)' % sdate)
+    if action=='older':
+        print lst
+    elif action=='delete-older':
+        if len(lst):
+            todel = lst
+                #todel = lst[:100]
+            account.copy(todel,cp.get(acct,'trash'))
+            account.store(todel,('\\Deleted',))
+            print "Deleted %s message%s from %s" % (
+                len(lst), len(lst)==1 and '' or 's', folder)
+
+else:
+    die("Unknown action '%s'" % action)
