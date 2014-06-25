@@ -42,8 +42,16 @@ class Account(object):
         self.uid = True # False
 
     @classmethod
+    def from_file(cls, filename, acct):
+        '''Instantiate an Account from a config file'''
+        import ConfigParser, os
+        cp = ConfigParser.ConfigParser()
+        cp.read(os.path.expanduser(filename)) # No error if no such file
+        return cls.from_config(cp, acct)
+
+    @classmethod
     def from_config(cls, cp, acct):
-        '''Instantiate an Account froma ConfigParser'''
+        '''Instantiate an Account from a ConfigParser'''
         from ConfigParser import NoOptionError
         host = cp.get(acct,'host')
         user = cp.get(acct,'user')

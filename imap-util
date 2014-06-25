@@ -34,12 +34,8 @@ elif args.verbose:
 
 rc = '~/.imap'
 acct, action = args.account, args.action
-cp = ConfigParser.SafeConfigParser()
-cp.read(os.path.expanduser(rc))
-#if not cp.has_section(acct):
-#    die("%s: No such account '%s' in %s" % (myname,acct,rc))
 try:
-    account = ptimap.Account.from_config(cp, acct)
+    account = ptimap.Account.from_file(rc, acct)
 except ConfigParser.NoSectionError:
     print dir(ap)
     die("%s: No such account '%s' in %s" % (ap.prog, acct, rc))
