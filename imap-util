@@ -5,7 +5,7 @@
 #=======================================================================
 import sys
 import ptimap
-import getopt
+import argparse
 import ConfigParser
 import os.path
 import time
@@ -17,30 +17,25 @@ def die(msg,code=1):
     sys.stderr.write(msg+'\n')
     sys.exit(code)
 
-def usage():
-    die("Usage: %s account command..." % myname,
-        200)
-
-try:
-    opts, args = getopt.getopt(sys.argv[1:],
-                               'dv',
-                               ['debug','verbose'])
-except getopt.GetoptError, err:
-    sys.stderr.write(err + '\n')
-    usage()
-if len(args) < 2:
-    usage()
-verbose = 0
-for opt, val in opts:
-    if opt in ('-v','--verbose'):
-        verbose = 1
-        logging.basicConfig(level=logging.INFO)
-    elif opt in ('-d','--debug'):
-        verbose = 2
-        logging.basicConfig(level=logging.DEBUG)
+ap = argparse.ArgumentParser()
+ap.add_argument('-v','--verbose', action='store_true',
+                help='Show progress')
+ap.add_argument('-d','--debug', action='store_true',
+                help='Low-level tracing')
+ap.add_argument('account',
+                help='Account name in ~/.imap')
+ap.add_argument('action',
+                help='Action to perform (login, etc.)')
+ap.add_argument('arg', nargs='*',
+                help='Arguments specific to action')
+args = ap.parse_args()
+if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+elif args.verbose:
+    logging.basicConfig(level=logging.INFO)
 
 rc = '~/.imap'
-acct, action = args[0:2]
+acct, action = args.account, args.action
 cp = ConfigParser.SafeConfigParser(dict(ssl='no',
                                         port='0',
                                         directory=''))
@@ -63,22 +58,22 @@ elif action=='namespace':
     ns = account.namespace()
     print ns
 elif action=='folders':
-    if len(sys.argv) > 3:
-        lst = account.folders(sys.argv[3])
+    if len(args.arg) > 0:
+        lst = account.folders(args.arg[0])
     else:
         lst = account.folders()
     for f in lst:
         print f
 
 elif action=='select':
-    folder = sys.argv[3]
+    folder = args.arg[0]
     nmsgs = account.select(folder)
     print "%d message(s) in %s" % (nmsgs, folder)
 
 elif action in ('older','delete-older'):
-    if len(sys.argv) < 5:
+    if len(args.arg) != 2:
         die("Usage: %s account older folder days" % myname)
-    folder, days = sys.argv[3:5]
+    folder, days = args.arg
     account.select(folder)
     date = time.localtime(time.time() - int(days) * 86400)
 #        sdate = imaplib.Time2Internaldate(date)
