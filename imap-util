@@ -11,10 +11,8 @@ import os.path
 import time
 import logging
 
-myname = sys.argv[0]
-
 def die(msg,code=1):
-    sys.stderr.write(msg+'\n')
+    print >>sys.stderr, msg
     sys.exit(code)
 
 ap = argparse.ArgumentParser()
@@ -25,7 +23,7 @@ ap.add_argument('-d','--debug', action='store_true',
 ap.add_argument('account',
                 help='Account name in ~/.imap')
 ap.add_argument('action',
-                help='Action to perform (login, etc.)')
+                help='Action to perform (login,capabilities,folders,select,delete-older)')
 ap.add_argument('arg', nargs='*',
                 help='Arguments specific to action')
 args = ap.parse_args()
@@ -36,18 +34,16 @@ elif args.verbose:
 
 rc = '~/.imap'
 acct, action = args.account, args.action
-cp = ConfigParser.SafeConfigParser(dict(ssl='no',
-                                        port='0',
-                                        directory=''))
+cp = ConfigParser.SafeConfigParser()
 cp.read(os.path.expanduser(rc))
-if not cp.has_section(acct):
-    die("%s: No such account '%s' in %s" % (myname,acct,rc))
-account = ptimap.Account(host=cp.get(acct,'host'),
-                         user=cp.get(acct,'user'),
-                         password=cp.get(acct,'password'),
-                         ssl=cp.getboolean(acct,'ssl'),
-                         port=cp.getint(acct,'port') or None,
-                         directory=cp.get(acct,'directory'))
+#if not cp.has_section(acct):
+#    die("%s: No such account '%s' in %s" % (myname,acct,rc))
+try:
+    account = ptimap.Account.from_config(cp, acct)
+except ConfigParser.NoSectionError:
+    print dir(ap)
+    die("%s: No such account '%s' in %s" % (ap.prog, acct, rc))
+
 account.login()
 
 if action=='login':
@@ -72,7 +68,7 @@ elif action=='select':
 
 elif action in ('older','delete-older'):
     if len(args.arg) != 2:
-        die("Usage: %s account older folder days" % myname)
+        die("Usage: %s account older folder days" % ap.prog)
     folder, days = args.arg
     account.select(folder)
     date = time.localtime(time.time() - int(days) * 86400)
