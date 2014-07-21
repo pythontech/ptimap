@@ -1,0 +1,116 @@
+#!/usr/bin/env python
+#=======================================================================
+#	$Id$
+#	Various actions on IMAP folders
+#=======================================================================
+import sys
+import imapclient
+import argparse
+import ConfigParser
+import os.path
+import time
+import logging
+
+def die(msg,code=1):
+    print >>sys.stderr, msg
+    sys.exit(code)
+
+ap = argparse.ArgumentParser()
+ap.add_argument('-v','--verbose', action='store_true',
+                help='Show progress')
+ap.add_argument('-d','--debug', action='store_true',
+                help='Low-level tracing')
+ap.add_argument('account',
+                help='Account name in ~/.imap')
+ap.add_argument('action',
+                help='Action to perform (login,capabilities,folders,select,delete-older)')
+ap.add_argument('arg', nargs='*',
+                help='Arguments specific to action')
+args = ap.parse_args()
+if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+elif args.verbose:
+    logging.basicConfig(level=logging.INFO)
+
+rc = '~/.imap'
+acct, action = args.account, args.action
+cp = ConfigParser.ConfigParser()
+cp.read(os.path.expanduser(rc))
+host = cp.get(acct,'host')
+user = cp.get(acct,'user')
+password = cp.get(acct,'password')
+try:
+    ssl = cp.getboolean(acct,'ssl')
+except ConfigParser.NoOptionError:
+    ssl = False
+try:
+    port = cp.getint(acct,'port')
+except ConfigParser.NoOptionError:
+    port = None
+
+client = imapclient.IMAPClient(host, port, use_uid=True, ssl=ssl)
+client.login(user, password)
+
+if action=='login':
+    pass
+elif action=='capabilities':
+    for c in client.capabilities():
+        print c
+elif action=='namespace':
+    ns = client.namespace()
+    print ns
+elif action=='folders':
+    if len(args.arg) > 0:
+        lst = client.list_folders(args.arg[0])
+    else:
+        lst = client.list_folders()
+    for f in lst:
+        print f
+
+elif action=='select':
+    folder = args.arg[0]
+    res = client.select_folder(folder)
+    print "%d message(s) in %s" % (res['EXISTS'], folder)
+
+elif action in ('older','delete-older'):
+    if len(args.arg) != 2:
+        die("Usage: %s account older folder days" % ap.prog)
+    folder, days = args.arg
+    client.select_folder(folder)
+    date = time.localtime(time.time() - int(days) * 86400)
+#        sdate = imaplib.Time2Internaldate(date)
+#        print 'sdate:',sdate
+#        lst = account.search('SEEN','UNDELETED',
+#                             'BEFORE',sdate)
+    sdate = time.strftime('%e-%b-%Y', date)
+    lst = client.search(('SEEN','UNDELETED',
+                         '(BEFORE %s)' % sdate))
+    if action=='older':
+        print lst
+    elif action=='delete-older':
+        if len(lst):
+            todel = lst
+                #todel = lst[:100]
+            account.copy(todel,cp.get(acct,'trash'))
+            account.store(todel,('\\Deleted',))
+            print "Deleted %s message%s from %s" % (
+                len(lst), len(lst)==1 and '' or 's', folder)
+
+elif action=='export':
+    folder = args.arg[0]
+    client.select_folder(folder)
+    if len(args.arg) == 1:
+        lst = client.search()
+        lst = lst[:10]
+    else:
+        lst = [int(a) for a in args.arg[1:]]
+    print lst
+    res = client.fetch(lst, ['RFC822.HEADER','RFC822.TEXT'])
+    for uid in lst:
+        hdr = res[uid]['RFC822.HEADER']
+        text = res[uid]['RFC822.TEXT']
+        print '===================================='
+        print hdr, text[:400]
+        print '===================================='
+else:
+    die("Unknown action '%s'" % action)
