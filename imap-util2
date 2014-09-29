@@ -1,7 +1,15 @@
 #!/usr/bin/env python
 #=======================================================================
-#	$Id$
 #	Various actions on IMAP folders
+#	Examples:
+#	  imap-util2 $acct login
+#	  imap-util2 $acct capabilities
+#	  imap-util2 $acct namespace
+#	  imap-util2 $acct folders
+#	  imap-util2 $acct select $folder
+#	  imap-util2 $acct older $folder $days
+#	  imap-util2 $acct delete-older $folder $days
+#	  imap-util2 $acct export $folder [uid...]
 #=======================================================================
 import sys
 import imapclient
@@ -104,13 +112,24 @@ elif action=='export':
         lst = lst[:10]
     else:
         lst = [int(a) for a in args.arg[1:]]
-    print lst
-    res = client.fetch(lst, ['RFC822.HEADER','RFC822.TEXT'])
-    for uid in lst:
-        hdr = res[uid]['RFC822.HEADER']
-        text = res[uid]['RFC822.TEXT']
-        print '===================================='
-        print hdr, text[:400]
-        print '===================================='
+    #print lst
+    res = client.fetch(lst, ['ENVELOPE', 'RFC822.HEADER','RFC822.TEXT'])
+    with open('/dev/stdout', 'wb') as out:
+        for uid in lst:
+            env = res[uid]['ENVELOPE']
+            hdr = res[uid]['RFC822.HEADER']
+            text = res[uid]['RFC822.TEXT']
+            assert not text.startswith('From ')
+            assert '\nFrom ' not in text
+            #print '===================================='
+            #print env
+            #print hdr, text[:400]
+            #print repr(hdr[-10:])
+            #print '===================================='
+            from_ = env.from_[0]
+            out.write('From %s@%s\n' % (from_.mailbox, from_.host))
+            out.write(hdr)
+            out.write(text)
+            out.write('\n')
 else:
     die("Unknown action '%s'" % action)
