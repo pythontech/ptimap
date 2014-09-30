@@ -16,120 +16,199 @@ import imapclient
 import argparse
 import ConfigParser
 import os.path
+import re
 import time
 import logging
+
+From_RE = re.compile('^From ', flags=re.MULTILINE)
 
 def die(msg,code=1):
     print >>sys.stderr, msg
     sys.exit(code)
 
-ap = argparse.ArgumentParser()
-ap.add_argument('-v','--verbose', action='store_true',
-                help='Show progress')
-ap.add_argument('-d','--debug', action='store_true',
-                help='Low-level tracing')
-ap.add_argument('account',
-                help='Account name in ~/.imap')
-ap.add_argument('action',
-                help='Action to perform (login,capabilities,folders,select,delete-older)')
-ap.add_argument('arg', nargs='*',
-                help='Arguments specific to action')
-args = ap.parse_args()
-if args.debug:
-    logging.basicConfig(level=logging.DEBUG)
-elif args.verbose:
-    logging.basicConfig(level=logging.INFO)
+def arg(*args, **kw):
+    def decor(f):
+        if not hasattr(f, 'argdefs'):
+            f.argdefs = []
+        f.argdefs.insert(0, (args, kw))
+        return f
+    return decor
 
-rc = '~/.imap'
-acct, action = args.account, args.action
-cp = ConfigParser.ConfigParser()
-cp.read(os.path.expanduser(rc))
-host = cp.get(acct,'host')
-user = cp.get(acct,'user')
-password = cp.get(acct,'password')
-try:
-    ssl = cp.getboolean(acct,'ssl')
-except ConfigParser.NoOptionError:
-    ssl = False
-try:
-    port = cp.getint(acct,'port')
-except ConfigParser.NoOptionError:
-    port = None
+class ImapUtil(object):
+    def __init__(self, rcfile='~/.imap'):
+        self.rcfile = rcfile
 
-client = imapclient.IMAPClient(host, port, use_uid=True, ssl=ssl)
-client.login(user, password)
+    def main(self):
+        ap = argparse.ArgumentParser()
+        ap.add_argument('-v','--verbose', action='store_true',
+                        help='Show progress')
+        ap.add_argument('-d','--debug', action='store_true',
+                        help='Low-level tracing')
+        ap.add_argument('account',
+                        help='Account name in %s' % self.rcfile)
+        sub = ap.add_subparsers(dest='action', help='Action to perform')
+        actfunc = {}
+        for name, func in sorted(self.__class__.__dict__.items()):
+            if name.startswith('do_'):
+                action = name[3:].replace('_', '-')
+                actfunc[action] = func
+                sp = sub.add_parser(action)
+                for aargs, akw in getattr(func, 'argdefs', []):
+                    sp.add_argument(*aargs, **akw)
+        args = ap.parse_args()
+        if args.debug:
+            logging.basicConfig(level=logging.DEBUG)
+        elif args.verbose:
+            logging.basicConfig(level=logging.INFO)
 
-if action=='login':
-    pass
-elif action=='capabilities':
-    for c in client.capabilities():
-        print c
-elif action=='namespace':
-    ns = client.namespace()
-    print ns
-elif action=='folders':
-    if len(args.arg) > 0:
-        lst = client.list_folders(args.arg[0])
-    else:
-        lst = client.list_folders()
-    for f in lst:
-        print f
+        self.acct, action = args.account, args.action
+        cp = ConfigParser.ConfigParser()
+        cp.read(os.path.expanduser(self.rcfile))
+        host = cp.get(self.acct,'host')
+        user = cp.get(self.acct,'user')
+        password = cp.get(self.acct,'password')
+        try:
+            ssl = cp.getboolean(self.acct,'ssl')
+        except ConfigParser.NoOptionError:
+            ssl = False
+        try:
+            port = cp.getint(self.acct,'port')
+        except ConfigParser.NoOptionError:
+            port = None
+        try:
+            self.trash = cp.get(self.acct,'trash')
+        except ConfigParser.NoOptionError:
+            self.trash = None
 
-elif action=='select':
-    folder = args.arg[0]
-    res = client.select_folder(folder)
-    print "%d message(s) in %s" % (res['EXISTS'], folder)
+        self.client = imapclient.IMAPClient(host, port, use_uid=True, ssl=ssl)
+        self.client.login(user, password)
 
-elif action in ('older','delete-older'):
-    if len(args.arg) != 2:
-        die("Usage: %s account older folder days" % ap.prog)
-    folder, days = args.arg
-    client.select_folder(folder)
-    date = time.localtime(time.time() - int(days) * 86400)
-#        sdate = imaplib.Time2Internaldate(date)
-#        print 'sdate:',sdate
-#        lst = account.search('SEEN','UNDELETED',
-#                             'BEFORE',sdate)
-    sdate = time.strftime('%e-%b-%Y', date)
-    lst = client.search(('SEEN','UNDELETED',
-                         '(BEFORE %s)' % sdate))
-    if action=='older':
+        # Route to appropriate function
+        func = actfunc[action]
+        func(self, args)
+
+    def do_capabilities(self, args):
+        for c in self.client.capabilities():
+            print c
+
+    def do_namespace(self, args):
+        ns = self.client.namespace()
+        print ns
+
+    @arg('folder', nargs='?')
+    def do_folders(self, args):
+        if args.folder is not None:
+            lst = self.client.list_folders(args.folder)
+        else:
+            lst = self.client.list_folders()
+        for f in lst:
+            print f
+
+    @arg('folder')
+    def do_select(self, args):
+        folder = args.folder
+        res = self.client.select_folder(folder)
+        print "%d message(s) in %s" % (res['EXISTS'], folder)
+
+    @arg('--export', type=str, help='Export messages')
+    @arg('folder')
+    @arg('days', type=int)
+    def do_older(self, args):
+        lst = self.get_older(args.folder, args.days)
+        if args.export:
+            self.export(lst, os.path.expanduser(args.export))
         print lst
-    elif action=='delete-older':
-        if len(lst):
-            todel = lst
-                #todel = lst[:100]
-            account.copy(todel,cp.get(acct,'trash'))
-            account.store(todel,('\\Deleted',))
-            print "Deleted %s message%s from %s" % (
-                len(lst), len(lst)==1 and '' or 's', folder)
 
-elif action=='export':
-    folder = args.arg[0]
-    client.select_folder(folder)
-    if len(args.arg) == 1:
-        lst = client.search()
-        lst = lst[:10]
-    else:
-        lst = [int(a) for a in args.arg[1:]]
-    #print lst
-    res = client.fetch(lst, ['ENVELOPE', 'RFC822.HEADER','RFC822.TEXT'])
-    with open('/dev/stdout', 'wb') as out:
-        for uid in lst:
-            env = res[uid]['ENVELOPE']
-            hdr = res[uid]['RFC822.HEADER']
-            text = res[uid]['RFC822.TEXT']
-            assert not text.startswith('From ')
-            assert '\nFrom ' not in text
-            #print '===================================='
-            #print env
-            #print hdr, text[:400]
-            #print repr(hdr[-10:])
-            #print '===================================='
-            from_ = env.from_[0]
-            out.write('From %s@%s\n' % (from_.mailbox, from_.host))
-            out.write(hdr)
-            out.write(text)
-            out.write('\n')
-else:
-    die("Unknown action '%s'" % action)
+    @arg('--limit', type=int, help='Treat only this number of messages')
+    @arg('--export', type=str, help='Export messages before deletion')
+    @arg('folder')
+    @arg('days', type=int)
+    def do_purge_older(self, args):
+        folder = args.folder
+        lst = self.get_older(folder, args.days)
+        if not lst:
+            return
+        if args.limit:
+            lst = lst[:args.limit]
+        if args.export:
+            self.export(lst, os.path.expanduser(args.export))
+        self.client.delete_messages(lst)
+        self.client.expunge()
+        if args.verbose:
+            print "Purged %s message%s from %s" % \
+                (len(lst), '' if len(lst)==1 else 's', folder)
+
+    @arg('folder')
+    @arg('days', type=int)
+    def do_trash_older(self, args):
+        if self.trash is None:
+            raise RuntimeError('No trash folder defined for %s' % self.acct)
+        folder = args.folder
+        lst = self.get_older(folder, args.days)
+        if not lst:
+            return
+        self.client.copy(lst, self.trash)
+        self.client.delete_messages(lst)
+        if args.verbose:
+            print "Deleted %s message%s from %s" % \
+                (len(lst), '' if len(lst)==1 else 's', folder)
+
+    def get_older(self, folder, days):
+        self.client.select_folder(folder)
+        date = time.localtime(time.time() - int(days) * 86400)
+    #        sdate = imaplib.Time2Internaldate(date)
+    #        print 'sdate:',sdate
+    #        lst = account.search('SEEN','UNDELETED',
+    #                             'BEFORE',sdate)
+        sdate = time.strftime('%e-%b-%Y', date)
+        lst = self.client.search(('SEEN','UNDELETED',
+                             '(BEFORE %s)' % sdate))
+        return lst
+
+    @arg('--delete', action='store_true', help='Delete messages after export')
+    @arg('--limit', type=int, help='Export only this number of messages')
+    @arg('--output', type=str, default='/dev/stdout', help='Output file')
+    @arg('folder')
+    @arg('seq', nargs='*', type=int)
+    def do_export(self, args):
+        folder = args.folder
+        seqs = args.seq
+        self.client.select_folder(folder)
+        if len(seqs) == 0:
+            lst = self.client.search()
+            if args.limit:
+                lst = lst[:args.limit]
+        else:
+            lst = [int(a) for a in seqs]
+        #print lst
+        # res = self.client.fetch(lst, ['ENVELOPE', 'RFC822.HEADER','RFC822.TEXT'])
+        self.export(lst, os.path.expanduser(args.output))
+        if args.delete:
+            self.client.delete_messages(lst)
+            self.client.expunge()
+
+    def export(self, lst, outfile):
+        '''Export listed messages from current folder to a file.
+        The file is written in mboxo format.
+        '''
+        res = self.client.fetch(lst, ['RFC822.HEADER','RFC822.TEXT'])
+        with open(outfile, 'wb') as out:
+            for uid in lst:
+                # Envelope cam contain invalid date e.g. "Tue, Wed, 18 June 2014 00:42:51 -0800"
+                # So don't even fetch that
+                #env = res[uid]['ENVELOPE']
+                #from_ = env.from_[0]
+                #out.write('From %s@%s\n' % (from_.mailbox, from_.host))
+                out.write('From ???@???\n')
+                hdr = res[uid]['RFC822.HEADER']
+                text = res[uid]['RFC822.TEXT']
+                #assert not text.startswith('From ')
+                #assert '\nFrom ' not in text
+                out.write(hdr.encode('latin-1'))
+                #out.write(text.encode('latin-1'))
+                xtext, nsubs = From_RE.subn('>From ', text.encode('latin-1'))
+                out.write(xtext)
+                out.write('\n')
+
+if __name__=='__main__':
+    ImapUtil().main()
