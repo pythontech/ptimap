@@ -7,9 +7,12 @@ import sys
 import ptimap
 import argparse
 import ConfigParser
+import os
 import os.path
 import time
 import logging
+
+_log = logging.getLogger('imap-util')
 
 def die(msg,code=1):
     print >>sys.stderr, msg
@@ -22,10 +25,25 @@ ap.add_argument('-d','--debug', action='store_true',
                 help='Low-level tracing')
 ap.add_argument('account',
                 help='Account name in ~/.imap')
-ap.add_argument('action',
-                help='Action to perform (login,capabilities,folders,select,delete-older)')
-ap.add_argument('arg', nargs='*',
-                help='Arguments specific to action')
+sub = ap.add_subparsers(dest='action', metavar='action',
+                        help='Action to perform')
+login = sub.add_parser('login')
+capabilities = sub.add_parser('capabilities')
+folders = sub.add_parser('folders')
+folders.add_argument('pattern', nargs='?')
+select = sub.add_parser('select')
+select.add_argument('folder')
+older = sub.add_parser('older')
+older.add_argument('folder')
+older.add_argument('days', type=int)
+delete_older = sub.add_parser('delete-older')
+delete_older.add_argument('folder')
+delete_older.add_argument('days', type=int)
+list_ = sub.add_parser('list')
+backup = sub.add_parser('backup')
+backup.add_argument('-c','--cachedir', default='.cache')
+backup.add_argument('folder')
+backup.add_argument('destdir')
 args = ap.parse_args()
 if args.debug:
     logging.basicConfig(level=logging.DEBUG)
@@ -37,7 +55,6 @@ acct, action = args.account, args.action
 try:
     account = ptimap.Account.from_file(rc, acct)
 except ConfigParser.NoSectionError:
-    print dir(ap)
     die("%s: No such account '%s' in %s" % (ap.prog, acct, rc))
 
 account.login()
@@ -50,22 +67,24 @@ elif action=='namespace':
     ns = account.namespace()
     print ns
 elif action=='folders':
-    if len(args.arg) > 0:
-        lst = account.folders(args.arg[0])
+    if args.pattern:
+        lst = account.folders(args.pattern)
     else:
         lst = account.folders()
     for f in lst:
-        print f
-
+        print f.path
+elif action=='list':
+    for folder in account.folders():
+        print folder.path
+        for email in folder.iteremails():
+            print '  %s' % email.subject
 elif action=='select':
-    folder = args.arg[0]
+    folder = args.folder
     nmsgs = account.select(folder)
     print "%d message(s) in %s" % (nmsgs, folder)
 
 elif action in ('older','delete-older'):
-    if len(args.arg) != 2:
-        die("Usage: %s account older folder days" % ap.prog)
-    folder, days = args.arg
+    folder, days = args.folder, args.days
     account.select(folder)
     date = time.localtime(time.time() - int(days) * 86400)
 #        sdate = imaplib.Time2Internaldate(date)
@@ -85,6 +104,25 @@ elif action in ('older','delete-older'):
             account.store(todel,('\\Deleted',))
             print "Deleted %s message%s from %s" % (
                 len(lst), len(lst)==1 and '' or 's', folder)
+elif action=='backup':
+    from ptimap.linkcache import LinkCache
+    lc = LinkCache(args.cachedir, 2)
+    folder, = [f for f in account.folders() if f.path == args.folder]
+    destdir = args.destdir
+    if not os.path.exists(destdir):
+        os.makedirs(destdir)
+    for em in folder.iteremails():
+        key = em.message_id.lstrip('<').rstrip('>')
+        _log.info('key=%s size=%d', key, em.size)
+        if lc.has_cached(key):
+            _log.info('cache hit for %s', key)
+            lc.use_cached(key, os.path.join(destdir, key))
+        else:
+            destpath = os.path.join(destdir, key)
+            _log.info('Writing to %s', destpath)
+            with open(destpath, 'w') as f:
+                em.write_to(f)
+            lc.add_to_cache(key, destpath)
 
 else:
     die("Unknown action '%s'" % action)

@@ -1,17 +1,30 @@
 #=======================================================================
 #       $Id: ptlisp.py,v 1.2 2012/08/29 07:20:28 pythontech Exp pythontech $
 #	Parse lispy stuff as returned by IMAP
+#
+#	Can be a simple expression e.g.
+#	 "(1 'foo')"
+#	or a tuple as in result of fetch:
+#	 ('OK',
+#	  [('1 (RFC822.HEADER {3986}',
+#	    'Return-path: ....X-Foo-bar\r\n\r\n'
+#	   ),
+#	   ')'
+#	  ]
+#	 )
 #=======================================================================
 _atomstart = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' \
     'abcdefghijklmnopqrstuvwxyz' \
     '\\$'
 _atomchars = _atomstart + \
-    '0123456789-'
+    '0123456789-.[]'
 
-class Parser:
-    '''Parser for lisp expression (as used in IMAP'''
-    def __init__(self, string):
-        self.string = string
+class Parser(object):
+    '''Parser for lisp expression (as used in IMAP)'''
+    def __init__(self, data):
+        self.lines = [data]  if isinstance(data, str)  else list(data)
+        self.string = ''
+        self.inline = None
 
     class ParseError(Exception): pass
     class NoMoreItems(Exception): pass
@@ -60,9 +73,9 @@ class Parser:
             try:
                 inner = self._items()
             except IndexError:
-                raise self.ParseError, "Mismatched parens at end"
+                raise self.ParseError("Mismatched parens at end")
             if self._next() != ')':
-                raise self.ParseError, "Mismatched parens at '%s'" % self.c
+                raise self.ParseError("Mismatched parens at '%s'" % self.c)
             return inner
         elif self.c=='"':
             string = ''
@@ -80,9 +93,27 @@ class Parser:
             except IndexError:
                 pass
             self.pos -= 1
-            return atom
+            # N.B. NIL can be an atom in astring context but not nstring
+            return None  if atom=='NIL'  else atom
+        elif self.c == '{':
+            # IMAP counted string: {size} followed by data
+            count = 0
+            while self._next() in '0123456789':
+                count = 10*count + ord(self.c)-ord('0')
+            #print 'inline len = %d' % count
+            if self.c != '}':
+                #print 'No }'
+                raise self.ParseError("Mismatched braces at '%s'" % self.c)
+            if self.inline is None:
+                #print 'No inline'
+                raise self.ParseError('No inline data')
+            val = self.inline
+            #print 'using inline %r' % val
+            self.inline = None
+            return val
+            
         else:
-            raise self.ParseError, "Unknown character '%s'" % self.c
+            raise self.ParseError("Unknown character '%s'" % self.c)
 
     def _wh(self):
         '''Skip whitespace, returning next character'''
@@ -93,8 +124,19 @@ class Parser:
     def _next(self):
         '''Get next character, save in self.c and return'''
         self.pos += 1
+        while self.pos >= len(self.string):
+            self._get_string()
+            #print 'new string: %r' % self.string
+            self.pos = 0
         self.c = self.string[self.pos]
         return self.c
+
+    def _get_string(self):
+        item = self.lines.pop(0)
+        if isinstance(item, tuple):
+            self.string, self.inline = item
+        else:
+            self.string, self.inline = item, None
 
 if __name__=='__main__':
     import sys
