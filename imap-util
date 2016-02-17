@@ -112,7 +112,16 @@ elif action=='backup':
     if not os.path.exists(destdir):
         os.makedirs(destdir)
     for em in folder.iteremails():
-        key = em.message_id.lstrip('<').rstrip('>')
+        msgid = em.message_id
+        if msgid is None:
+            print 'No message-id for email with subject %r' % em.subject
+            # Synthesize a message-id equivalent
+            date = em.date or ''
+            addr = em.from_[0]
+            key = ('%s~%s' % (date, addr)).replace(' ','_')
+        else:
+            key = msgid.lstrip('<').rstrip('>')
+        key = key.replace('%','%25').replace('/','%2F')
         _log.info('key=%s size=%d', key, em.size)
         if lc.has_cached(key):
             _log.info('cache hit for %s', key)

@@ -222,6 +222,11 @@ class Email (object):
         self.attr = {}
 
     @property
+    def date(self):
+        env = self._ensure_envelope()
+        return env[0]
+
+    @property
     def subject(self):
         env = self._ensure_envelope()
         return env[1]
