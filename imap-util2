@@ -111,21 +111,23 @@ class ImapUtil(object):
         print "%d message(s) in %s" % (res['EXISTS'], folder)
 
     @arg('--export', type=str, help='Export messages')
+    @arg('--unread', action='store_true', help='Treat even if unread')
     @arg('folder')
     @arg('days', type=int)
     def do_older(self, args):
-        lst = self.get_older(args.folder, args.days)
+        lst = self.get_older(args.folder, args.days, unread=args.unread)
         if args.export:
             self.export(lst, os.path.expanduser(args.export))
         print lst
 
     @arg('--limit', type=int, help='Treat only this number of messages')
     @arg('--export', type=str, help='Export messages before deletion')
+    @arg('--unread', action='store_true', help='Delete even if unread')
     @arg('folder')
     @arg('days', type=int)
     def do_purge_older(self, args):
         folder = args.folder
-        lst = self.get_older(folder, args.days)
+        lst = self.get_older(folder, args.days, unread=self.unread)
         if not lst:
             return
         if args.limit:
@@ -138,13 +140,14 @@ class ImapUtil(object):
             print "Purged %s message%s from %s" % \
                 (len(lst), '' if len(lst)==1 else 's', folder)
 
+    @arg('--unread', action='store_true', help='Trash even if unread')
     @arg('folder')
     @arg('days', type=int)
     def do_trash_older(self, args):
         if self.trash is None:
             raise RuntimeError('No trash folder defined for %s' % self.acct)
         folder = args.folder
-        lst = self.get_older(folder, args.days)
+        lst = self.get_older(folder, args.days, unread=args.unread)
         if not lst:
             return
         self.client.copy(lst, self.trash)
@@ -153,7 +156,7 @@ class ImapUtil(object):
             print "Deleted %s message%s from %s" % \
                 (len(lst), '' if len(lst)==1 else 's', folder)
 
-    def get_older(self, folder, days):
+    def get_older(self, folder, days, unread=False):
         self.client.select_folder(folder)
         date = time.localtime(time.time() - int(days) * 86400)
     #        sdate = imaplib.Time2Internaldate(date)
@@ -161,8 +164,10 @@ class ImapUtil(object):
     #        lst = account.search('SEEN','UNDELETED',
     #                             'BEFORE',sdate)
         sdate = time.strftime('%e-%b-%Y', date)
-        lst = self.client.search(('SEEN','UNDELETED',
-                             '(BEFORE %s)' % sdate))
+        terms = ('UNDELETED', 'BEFORE', sdate)
+        if not unread:
+            terms += ('SEEN',)
+        lst = self.client.search(terms)
         return lst
 
     @arg('--delete', action='store_true', help='Delete messages after export')
