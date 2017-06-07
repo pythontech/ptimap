@@ -11,19 +11,23 @@
 #	  imap-util2 $acct delete-older $folder $days
 #	  imap-util2 $acct export $folder [uid...]
 #=======================================================================
+from __future__ import print_function
 import sys
 import imapclient
 import argparse
-import ConfigParser
+try:
+    import configparser
+except ImportError:
+    import ConfigParser as configparser
 import os.path
 import re
 import time
 import logging
 
-From_RE = re.compile('^From ', flags=re.MULTILINE)
+From_RE = re.compile(b'^From ', flags=re.MULTILINE)
 
 def die(msg,code=1):
-    print >>sys.stderr, msg
+    print(msg, file=sys.stderr)
     sys.exit(code)
 
 def arg(*args, **kw):
@@ -62,22 +66,22 @@ class ImapUtil(object):
             logging.basicConfig(level=logging.INFO)
 
         self.acct, action = args.account, args.action
-        cp = ConfigParser.ConfigParser()
+        cp = configparser.ConfigParser()
         cp.read(os.path.expanduser(self.rcfile))
         host = cp.get(self.acct,'host')
         user = cp.get(self.acct,'user')
         password = cp.get(self.acct,'password')
         try:
             ssl = cp.getboolean(self.acct,'ssl')
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             ssl = False
         try:
             port = cp.getint(self.acct,'port')
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             port = None
         try:
             self.trash = cp.get(self.acct,'trash')
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             self.trash = None
 
         self.client = imapclient.IMAPClient(host, port, use_uid=True, ssl=ssl)
@@ -89,11 +93,11 @@ class ImapUtil(object):
 
     def do_capabilities(self, args):
         for c in self.client.capabilities():
-            print c
+            print(c)
 
     def do_namespace(self, args):
         ns = self.client.namespace()
-        print ns
+        print(ns)
 
     @arg('folder', nargs='?')
     def do_folders(self, args):
@@ -102,13 +106,13 @@ class ImapUtil(object):
         else:
             lst = self.client.list_folders()
         for f in lst:
-            print f
+            print(f)
 
     @arg('folder')
     def do_select(self, args):
         folder = args.folder
         res = self.client.select_folder(folder)
-        print "%d message(s) in %s" % (res['EXISTS'], folder)
+        print("%d message(s) in %s" % (res['EXISTS'], folder))
 
     @arg('--export', type=str, help='Export messages')
     @arg('--unread', action='store_true', help='Treat even if unread')
@@ -118,7 +122,7 @@ class ImapUtil(object):
         lst = self.get_older(args.folder, args.days, unread=args.unread)
         if args.export:
             self.export(lst, os.path.expanduser(args.export))
-        print lst
+        print(lst)
 
     @arg('--limit', type=int, help='Treat only this number of messages')
     @arg('--export', type=str, help='Export messages before deletion')
@@ -137,8 +141,8 @@ class ImapUtil(object):
         self.client.delete_messages(lst)
         self.client.expunge()
         if args.verbose:
-            print "Purged %s message%s from %s" % \
-                (len(lst), '' if len(lst)==1 else 's', folder)
+            print("Purged %s message%s from %s" % \
+                (len(lst), '' if len(lst)==1 else 's', folder))
 
     @arg('--unread', action='store_true', help='Trash even if unread')
     @arg('folder')
@@ -153,8 +157,8 @@ class ImapUtil(object):
         self.client.copy(lst, self.trash)
         self.client.delete_messages(lst)
         if args.verbose:
-            print "Deleted %s message%s from %s" % \
-                (len(lst), '' if len(lst)==1 else 's', folder)
+            print("Deleted %s message%s from %s" % \
+                (len(lst), '' if len(lst)==1 else 's', folder))
 
     def get_older(self, folder, days, unread=False):
         self.client.select_folder(folder)
@@ -204,16 +208,16 @@ class ImapUtil(object):
                 #env = res[uid]['ENVELOPE']
                 #from_ = env.from_[0]
                 #out.write('From %s@%s\n' % (from_.mailbox, from_.host))
-                out.write('From ???@???\n')
-                hdr = res[uid]['RFC822.HEADER']
-                text = res[uid]['RFC822.TEXT']
+                out.write(b'From ???@???\n')
+                hdr = res[uid][b'RFC822.HEADER']
+                text = res[uid][b'RFC822.TEXT']
                 #assert not text.startswith('From ')
                 #assert '\nFrom ' not in text
-                out.write(hdr.encode('latin-1'))
+                out.write(hdr)
                 #out.write(text.encode('latin-1'))
-                xtext, nsubs = From_RE.subn('>From ', text.encode('latin-1'))
+                xtext, nsubs = From_RE.subn(b'>From ', text)
                 out.write(xtext)
-                out.write('\n')
+                out.write(b'\n')
 
 if __name__=='__main__':
     ImapUtil().main()
