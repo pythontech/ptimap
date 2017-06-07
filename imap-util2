@@ -127,7 +127,7 @@ class ImapUtil(object):
     @arg('days', type=int)
     def do_purge_older(self, args):
         folder = args.folder
-        lst = self.get_older(folder, args.days, unread=self.unread)
+        lst = self.get_older(folder, args.days, unread=args.unread)
         if not lst:
             return
         if args.limit:
