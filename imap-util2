@@ -85,6 +85,9 @@ class ImapUtil(object):
             self.trash = None
 
         self.client = imapclient.IMAPClient(host, port, use_uid=True, ssl=ssl)
+        if args.debug:
+            self.client.debug = True
+
         self.client.login(user, password)
 
         # Route to appropriate function
