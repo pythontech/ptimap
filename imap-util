@@ -103,7 +103,8 @@ elif action in ('older','delete-older'):
         if len(lst):
             todel = lst
                 #todel = lst[:100]
-            account.copy(todel,cp.get(acct,'trash'))
+            #account.copy(todel,cp.get(acct,'trash'))
+            account.copy(todel, 'Trash')
             account.store(todel,('\\Deleted',))
             print("Deleted %s message%s from %s" % (
                 len(lst), len(lst)==1 and '' or 's', folder))
