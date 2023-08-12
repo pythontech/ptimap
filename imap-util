@@ -107,14 +107,17 @@ elif action in ('older','delete-older'):
 elif action=='backup':
     from ptimap.linkcache import LinkCache
     lc = LinkCache(args.cachedir, 2)
-    folder, = [f for f in account.folders() if f.path == args.folder]
+    match = [f for f in account.folders() if f.path == args.folder]
+    if not match:
+        raise ValueError('Folder %s not found' % args.folder)
+    folder = match[0]
     destdir = args.destdir
     if not os.path.exists(destdir):
         os.makedirs(destdir)
     for em in folder.iteremails():
         msgid = em.message_id
         if msgid is None:
-            print 'No message-id for email with subject %r' % em.subject
+            _log.info('No message-id for email with subject %r' % em.subject)
             # Synthesize a message-id equivalent
             date = em.date or ''
             addr = em.from_[0]
