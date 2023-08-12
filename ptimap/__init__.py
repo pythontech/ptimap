@@ -3,6 +3,7 @@
 #	$Id: ptimap.py,v 1.1 2012/04/30 07:56:11 pythontech Exp pythontech $
 #	Various actions on IMAP folders
 #=======================================================================
+from __future__ import print_function
 import imaplib
 from .lisp import Parser as LispParser
 import time
@@ -13,6 +14,9 @@ IMAPError = imaplib.IMAP4.error
 
 _log = logging.getLogger(__name__)
 
+def b2s(b):
+    return str(b.decode('ascii'))
+
 def _chk(resval):
     """Check result of command."""
     if resval[0] != 'OK':
@@ -22,7 +26,7 @@ def _chk(resval):
 def _parse(text):
     '''Parse a lisp expression'''
     try:
-        return LispParser(text).parse()
+        return LispParser(b2s(text)).parse()
     except Exception as e:
         raise Exception('Error parsing %r: %s' % (text, e))
 
@@ -47,29 +51,36 @@ class Account(object):
     @classmethod
     def from_file(cls, filename, acct):
         '''Instantiate an Account from a config file'''
-        import ConfigParser, os
-        cp = ConfigParser.ConfigParser()
+        try:
+            import configparser
+        except ImportError:     # PY2
+            import ConfigParser as configparser
+        import os
+        cp = configparser.ConfigParser()
         cp.read(os.path.expanduser(filename)) # No error if no such file
         return cls.from_config(cp, acct)
 
     @classmethod
     def from_config(cls, cp, acct):
         '''Instantiate an Account from a ConfigParser'''
-        from ConfigParser import NoOptionError
+        try:
+            import configparser
+        except ImportError:     # PY2
+            import ConfigParser as configparser
         host = cp.get(acct,'host')
         user = cp.get(acct,'user')
         password = cp.get(acct,'password')
         try:
             ssl = cp.getboolean(acct,'ssl')
-        except NoOptionError:
+        except configparser.NoOptionError:
             ssl = False
         try:
             port = cp.getint(acct,'port')
-        except NoOptionError:
+        except configparser.NoOptionError:
             port = None
         try:
             directory = cp.get(acct,'directory')
-        except NoOptionError:
+        except configparser.NoOptionError:
             directory = ''
         return cls(host, user, password, ssl=ssl,port=port,directory=directory)
 
@@ -87,7 +98,7 @@ class Account(object):
             self._imap = imaplib.IMAP4(self.host, self.port)
         self.debug("Logging in to %s as %s" % (self.host, self.user))
         v = _chk(self._imap.login(self.user, self.password))
-        self.debug('<<< '+v[0])
+        self.debug('<<< '+b2s(v[0]))
         self.logged_in = True
         return v
 
@@ -155,7 +166,7 @@ class Account(object):
     def store(self, msgs,flags):
         mspec = _msglist(msgs)
         fspec = '('+' '.join(flags)+')'
-        #print 'mspec',mspec,'fspec',fspec
+        #print('mspec',mspec,'fspec',fspec)
         if self.uid:
             lst = _chk(self._imap.uid('store',mspec,'+FLAGS',fspec))
         else:
@@ -196,10 +207,11 @@ class Folder(object):
         fexpr = '(' + ' '.join(fields) + ')'
         _log.debug('uexpr=%r fexpr=%r', uexpr, fexpr)
         if self.account.uid:
-            res = self.account._imap.uid('fetch', uexpr, fexpr)
+            res = _chk(self.account._imap.uid('fetch', uexpr, fexpr))
         else:
-            res = self.account._imap.fetch(uexpr, fexpr)
-        unvlist = _parse(res[1])
+            res = _chk(self.account._imap.fetch(uexpr, fexpr))
+        # Not working...
+        unvlist = _parse(res[0])
         _log.debug('unvlist=%r', unvlist)
         uf = {}
         if self.account.uid:

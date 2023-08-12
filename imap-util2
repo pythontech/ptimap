@@ -66,6 +66,8 @@ class ImapUtil(object):
             logging.basicConfig(level=logging.INFO)
 
         self.acct, action = args.account, args.action
+        if action is None:      # PY3 bug
+            ap.error('No action given')
         cp = configparser.ConfigParser()
         cp.read(os.path.expanduser(self.rcfile))
         host = cp.get(self.acct,'host')
@@ -167,7 +169,7 @@ class ImapUtil(object):
         self.client.select_folder(folder)
         date = time.localtime(time.time() - int(days) * 86400)
     #        sdate = imaplib.Time2Internaldate(date)
-    #        print 'sdate:',sdate
+    #        print('sdate:',sdate)
     #        lst = account.search('SEEN','UNDELETED',
     #                             'BEFORE',sdate)
         sdate = time.strftime('%e-%b-%Y', date)
@@ -192,7 +194,7 @@ class ImapUtil(object):
                 lst = lst[:args.limit]
         else:
             lst = [int(a) for a in seqs]
-        #print lst
+        #print(lst)
         # res = self.client.fetch(lst, ['ENVELOPE', 'RFC822.HEADER','RFC822.TEXT'])
         self.export(lst, os.path.expanduser(args.output))
         if args.delete:

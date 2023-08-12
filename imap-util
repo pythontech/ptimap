@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 #=======================================================================
-#	$Id$
 #	Various actions on IMAP folders
 #=======================================================================
+from __future__ import print_function
 import sys
 import ptimap
 import argparse
-import ConfigParser
+try:
+    import configparser
+except ImportError:             # PY2
+    import ConfigParser as configgparser
 import os
 import os.path
 import time
@@ -15,7 +18,7 @@ import logging
 _log = logging.getLogger('imap-util')
 
 def die(msg,code=1):
-    print >>sys.stderr, msg
+    print(msg, file=sys.stderr)
     sys.exit(code)
 
 ap = argparse.ArgumentParser()
@@ -54,7 +57,7 @@ rc = '~/.imap'
 acct, action = args.account, args.action
 try:
     account = ptimap.Account.from_file(rc, acct)
-except ConfigParser.NoSectionError:
+except configparser.NoSectionError:
     die("%s: No such account '%s' in %s" % (ap.prog, acct, rc))
 
 account.login()
@@ -62,48 +65,48 @@ account.login()
 if action=='login':
     pass
 elif action=='capabilities':
-    print account._imap.capabilities
+    print(account._imap.capabilities)
 elif action=='namespace':
     ns = account.namespace()
-    print ns
+    print(ns)
 elif action=='folders':
     if args.pattern:
         lst = account.folders(args.pattern)
     else:
         lst = account.folders()
     for f in lst:
-        print f.path
+        print(f.path)
 elif action=='list':
     for folder in account.folders():
-        print folder.path
+        print(folder.path)
         for email in folder.iteremails():
-            print '  %s' % email.subject
+            print('  %s' % email.subject)
 elif action=='select':
     folder = args.folder
     nmsgs = account.select(folder)
-    print "%d message(s) in %s" % (nmsgs, folder)
+    print("%d message(s) in %s" % (nmsgs, folder))
 
 elif action in ('older','delete-older'):
     folder, days = args.folder, args.days
     account.select(folder)
     date = time.localtime(time.time() - int(days) * 86400)
 #        sdate = imaplib.Time2Internaldate(date)
-#        print 'sdate:',sdate
+#        print('sdate:',sdate)
 #        lst = account.search('SEEN','UNDELETED',
 #                             'BEFORE',sdate)
     sdate = time.strftime('%e-%b-%Y', date)
     lst = account.search('SEEN','UNDELETED',
                              '(BEFORE %s)' % sdate)
     if action=='older':
-        print lst
+        print(lst)
     elif action=='delete-older':
         if len(lst):
             todel = lst
                 #todel = lst[:100]
             account.copy(todel,cp.get(acct,'trash'))
             account.store(todel,('\\Deleted',))
-            print "Deleted %s message%s from %s" % (
-                len(lst), len(lst)==1 and '' or 's', folder)
+            print("Deleted %s message%s from %s" % (
+                len(lst), len(lst)==1 and '' or 's', folder))
 elif action=='backup':
     from ptimap.linkcache import LinkCache
     lc = LinkCache(args.cachedir, 2)

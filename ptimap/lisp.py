@@ -13,6 +13,8 @@
 #	  ]
 #	 )
 #=======================================================================
+from __future__ import print_function
+
 _atomstart = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' \
     'abcdefghijklmnopqrstuvwxyz' \
     '\\$'
@@ -35,7 +37,7 @@ class Parser(object):
         try:
             list = self._items()
         except IndexError:
-#            print "EOF: parse"
+#            print("EOF: parse")
             pass
         return list
 
@@ -44,7 +46,7 @@ class Parser(object):
         while True:
             try:
                 item = self._item()
-#                print 'item:',item
+#                print('item:',item)
                 items.append(item)
             except Parser.NoMoreItems:
                 return tuple(items)
@@ -59,7 +61,7 @@ class Parser(object):
             raise self.NoMoreItems
 
         if self.c in '0123456789':
-#            print "Start int"
+#            print("Start int")
             val = ord(self.c)-ord('0')
             try:
                 while self._next() in '0123456789':
@@ -69,7 +71,7 @@ class Parser(object):
             self.pos -= 1
             return val
         elif self.c=='(':
-#            print "start list"
+#            print("start list")
             try:
                 inner = self._items()
             except IndexError:
@@ -100,15 +102,15 @@ class Parser(object):
             count = 0
             while self._next() in '0123456789':
                 count = 10*count + ord(self.c)-ord('0')
-            #print 'inline len = %d' % count
+            #print('inline len = %d' % count)
             if self.c != '}':
-                #print 'No }'
+                #print('No }')
                 raise self.ParseError("Mismatched braces at '%s'" % self.c)
             if self.inline is None:
-                #print 'No inline'
+                #print('No inline')
                 raise self.ParseError('No inline data')
             val = self.inline
-            #print 'using inline %r' % val
+            #print('using inline %r' % val)
             self.inline = None
             return val
             
@@ -126,7 +128,7 @@ class Parser(object):
         self.pos += 1
         while self.pos >= len(self.string):
             self._get_string()
-            #print 'new string: %r' % self.string
+            #print('new string: %r' % self.string)
             self.pos = 0
         self.c = self.string[self.pos]
         return self.c
@@ -140,4 +142,4 @@ class Parser(object):
 
 if __name__=='__main__':
     import sys
-    print Parser(sys.argv[1]).parse()
+    print(Parser(sys.argv[1]).parse())
