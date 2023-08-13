@@ -196,7 +196,24 @@ class ImapUtil(object):
             self.client.delete_messages(lst)
             self.client.expunge()
 
-    def export(self, lst, outfile):
+    def export(self, lst, output):
+        if os.path.isdir(output):
+            self.export_emails(lst, output)
+        else:
+            self.export_mboxo(lst, output)
+
+    def export_emails(self, lst, outdir):
+        """Export listed messages from current folder as separate messages"""
+        res = self.client.fetch(lst, ['RFC822.HEADER','RFC822.TEXT'])
+        for uid in lst:
+            outfile = os.path.join(outdir, '%d.eml' % uid)
+            with open(outfile, 'wb') as out:
+                hdr = res[uid][b'RFC822.HEADER']
+                text = res[uid][b'RFC822.TEXT']
+                out.write(hdr)
+                out.write(text)
+
+    def export_mboxo(self, lst, outfile):
         '''Export listed messages from current folder to a file.
         The file is written in mboxo format.
         '''
