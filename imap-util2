@@ -21,7 +21,7 @@ except ImportError:
     import ConfigParser as configparser
 import os.path
 import re
-import time
+import datetime as dt
 import logging
 
 From_RE = re.compile(b'^From ', flags=re.MULTILINE)
@@ -98,10 +98,12 @@ class ImapUtil(object):
 
     def do_capabilities(self, args):
         for c in self.client.capabilities():
-            print(c)
+            print(str(c.decode('ascii')))
 
     def do_namespace(self, args):
         ns = self.client.namespace()
+        # E.g. ((('', '.'),), None, None)
+        # personal, other, shared
         print(ns)
 
     @arg('folder', nargs='?')
@@ -110,14 +112,14 @@ class ImapUtil(object):
             lst = self.client.list_folders(args.folder)
         else:
             lst = self.client.list_folders()
-        for f in lst:
-            print(f)
+        for flags, delimiter, name in lst:
+            print(name)
 
     @arg('folder')
     def do_select(self, args):
         folder = args.folder
         res = self.client.select_folder(folder)
-        print("%d message(s) in %s" % (res['EXISTS'], folder))
+        print("%d message(s) in %s" % (res[b'EXISTS'], folder))
 
     @arg('--export', type=str, help='Export messages')
     @arg('--unread', action='store_true', help='Treat even if unread')
@@ -167,16 +169,9 @@ class ImapUtil(object):
 
     def get_older(self, folder, days, unread=False):
         self.client.select_folder(folder)
-        date = time.localtime(time.time() - int(days) * 86400)
-    #        sdate = imaplib.Time2Internaldate(date)
-    #        print('sdate:',sdate)
-    #        lst = account.search('SEEN','UNDELETED',
-    #                             'BEFORE',sdate)
-        sdate = time.strftime('%e-%b-%Y', date)
-        terms = ('UNDELETED', 'BEFORE', sdate)
-        if not unread:
-            terms += ('SEEN',)
-        lst = self.client.search(terms)
+        date = dt.date.today() - dt.timedelta(days=days)
+        lst = self.client.search(('SEEN','UNDELETED',
+                                  'BEFORE', date))
         return lst
 
     @arg('--delete', action='store_true', help='Delete messages after export')
