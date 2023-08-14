@@ -10,11 +10,13 @@
 #	  imap-util2 $acct older $folder $days
 #	  imap-util2 $acct delete-older $folder $days
 #	  imap-util2 $acct export $folder [uid...]
+#	  imap-util2 $acct backup $folder destdir
 #=======================================================================
 from __future__ import print_function
 import sys
 import imapclient
 import argparse
+import email
 try:
     import configparser
 except ImportError:
@@ -41,6 +43,7 @@ def arg(*args, **kw):
 class ImapUtil(object):
     def __init__(self, rcfile='~/.imap'):
         self.rcfile = rcfile
+        self.log = logging.getLogger('imaputil')
 
     def main(self):
         ap = argparse.ArgumentParser()
@@ -198,6 +201,47 @@ class ImapUtil(object):
             self.client.delete_messages(lst)
             self.client.expunge()
 
+    @arg('-c','--cachedir', default='.cache')
+    @arg('folder')
+    @arg('destdir')
+    def do_backup(self, args):
+        from ptimap.linkcache import LinkCache
+        lc = LinkCache(args.cachedir, 2)
+        match = [name for flags, delim, name in self.client.list_folders()
+                 if name == args.folder]
+        if not match:
+            raise ValueError('Folder %s not found' % folder)
+        folder = match[0]
+        destdir = args.destdir
+        if not os.path.exists(destdir):
+            os.makedirs(destdir)
+        self.client.select_folder(folder)
+        lst = self.client.search()
+        self.log.debug('%d items', len(lst))
+        for uid, data in self.iter_fetch(lst, ['RFC822']):
+            raw = data[b'RFC822']
+            em = email.message_from_bytes(raw)
+            msgid = em.get('Message-ID')
+            if msgid is None:
+                self.log.info('No message-id for email with subject %r' % em.get('Subject'))
+                # Synthesize a message-id equivalent
+                date = em.get('Date') or ''
+                addr = em.get('From')
+                key = ('%s~%s' % (date, addr)).replace(' ','_')
+            else:
+                key = msgid.strip().lstrip('<').rstrip('>')
+            key = key.replace('%','%25').replace('/','%2F')
+            self.log.info('key=%s size=%d', key, len(raw))
+            if lc.has_cached(key):
+                self.log.info('cache hit for %s', key)
+                lc.use_cached(key, os.path.join(destdir, key))
+            else:
+                destpath = os.path.join(destdir, key)
+                self.log.info('Writing to %s', destpath)
+                with open(destpath, 'wb') as f:
+                    f.write(raw)
+                lc.add_to_cache(key, destpath)
+
     def export(self, lst, output):
         if os.path.isdir(output):
             self.export_emails(lst, output)
@@ -237,6 +281,19 @@ class ImapUtil(object):
                 xtext, nsubs = From_RE.subn(b'>From ', text)
                 out.write(xtext)
                 out.write(b'\n')
+
+    def iter_fetch(self, lst, items=[b'RFC822']):
+        """Fetch messages in chunks"""
+        chunksize = 5
+        for pos in range(0, len(lst), chunksize):
+            chunk = lst[pos:pos+chunksize]
+            res = self.client.fetch(chunk, items)
+            for uid, msg in res.items():
+                yield uid, msg
+
+    def fetch_whole(self, uid):
+        res = self.client.fetch([uid], ['RFC822'])
+        return res[uid][b'RFC822']
 
 if __name__=='__main__':
     ImapUtil().main()
