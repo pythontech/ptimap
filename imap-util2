@@ -218,25 +218,24 @@ class ImapUtil(object):
         self.client.select_folder(folder)
         lst = self.client.search()
         self.log.debug('%d items', len(lst))
-        for uid, data in self.iter_fetch(lst, ['RFC822']):
-            raw = data[b'RFC822']
-            em = email.message_from_bytes(raw)
-            msgid = em.get('Message-ID')
-            if msgid is None:
-                self.log.info('No message-id for email with subject %r' % em.get('Subject'))
+        for uid, data in self.iter_fetch(lst, ['ENVELOPE']):
+            env = data[b'ENVELOPE']
+            msgid = env.message_id
+            if not msgid:
+                self.log.info('No message-id for email with subject %r' % env.subject)
                 # Synthesize a message-id equivalent
-                date = em.get('Date') or ''
-                addr = em.get('From')
+                date = str(env.date) if env.date else ''
+                addr = env.from_[0] if env.from_ else ''
                 key = ('%s~%s' % (date, addr)).replace(' ','_')
             else:
-                key = msgid.strip().lstrip('<').rstrip('>')
+                key = msgid.decode().lstrip('<').rstrip('>')
             key = key.replace('%','%25').replace('/','%2F')
-            self.log.info('key=%s size=%d', key, len(raw))
             if lc.has_cached(key):
                 self.log.info('cache hit for %s', key)
                 lc.use_cached(key, os.path.join(destdir, key))
             else:
                 destpath = os.path.join(destdir, key)
+                raw = self.fetch_whole(uid)
                 self.log.info('Writing to %s', destpath)
                 with open(destpath, 'wb') as f:
                     f.write(raw)
