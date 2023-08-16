@@ -281,18 +281,30 @@ class ImapUtil(object):
                 out.write(xtext)
                 out.write(b'\n')
 
-    def iter_fetch(self, lst, items=[b'RFC822']):
+    def iter_fetch(self, lst, items=[b'RFC822'], batchsize=10):
         """Fetch messages in chunks"""
-        chunksize = 5
-        for pos in range(0, len(lst), chunksize):
-            chunk = lst[pos:pos+chunksize]
-            res = self.client.fetch(chunk, items)
-            for uid, msg in res.items():
-                yield uid, msg
+        for pos in range(0, len(lst), batchsize):
+            chunk = lst[pos:pos+batchsize]
+            try:
+                res = self.client.fetch(chunk, items)
+            except Exception as e:
+                # imapclient may fail to convert to Envelope
+                # e.g. if date is not in standard format
+                # (in python 3.6; may be fixed in 3.10)
+                import traceback
+                traceback.print_exc()
+            else:
+                for uid, msg in res.items():
+                    yield uid, msg
 
-    def fetch_whole(self, uid):
-        res = self.client.fetch([uid], ['RFC822'])
-        return res[uid][b'RFC822']
+    def fetch_whole(self, uid, mark_seen=False):
+        """Fetch a whole message from the current folder"""
+        if mark_seen:
+            res = self.client.fetch([uid], ['RFC822'])
+            return res[uid][b'RFC822']
+        else:
+            res = self.client.fetch([uid], ['BODY.PEEK[]'])
+            return res[uid][b'BODY[]']
 
 if __name__=='__main__':
     ImapUtil().main()
