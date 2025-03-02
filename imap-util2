@@ -170,7 +170,9 @@ class ImapUtil(object):
     def get_older(self, folder, days, unread=False):
         self.client.select_folder(folder)
         date = dt.date.today() - dt.timedelta(days=days)
-        lst = self.client.search(('SEEN','UNDELETED',
+        maybe_seen = () if unread else ('SEEN',)
+        lst = self.client.search(maybe_seen +
+                                 ('UNDELETED',
                                   'BEFORE', date))
         return lst
 
